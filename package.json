@@ -1,0 +1,11 @@
+{
+  "_copyright": "\u00a9 2026 Alexander Pisko. All rights reserved.",
+  "name": "pokerengine",
+  "version": "0.0.2",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npx serve . -l 8000",
+    "test": "node tests/run_tests.js"
+  }
+}

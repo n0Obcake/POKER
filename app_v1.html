@@ -1,0 +1,320 @@
+<!-- © 2026 Alexander Pisko. All rights reserved.
+app_v1.html — single-file runner for ACP1 foundation.
+Open directly (file://) with no server.
+-->
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Poker Engine — ACP1 Foundation (Single File)</title>
+    <style>
+      :root { color-scheme: dark light; }
+      body { font-family: system-ui, sans-serif; margin: 16px; }
+      h1 { margin: 0 0 6px 0; }
+      .row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin: 10px 0; }
+      label { display:flex; gap:6px; align-items:center; }
+      select { padding: 2px 4px; }
+      #grid { margin-top: 10px; }
+      table { border-collapse: collapse; font-size: 12px; }
+      th, td { border: 1px solid #333; }
+      th { padding: 4px; }
+      td { width: 26px; height: 22px; text-align: center; }
+      .muted { opacity: 0.8; }
+      code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+    </style>
+  </head>
+  <body>
+    <h1>Poker Engine — ACP1 Foundation</h1>
+    <div class="muted"><b>SSOT:</b> docs/POKERENGINE_MASTERSSOTV015.docx</div>
+
+    <div class="row">
+      <label>Mode
+        <select id="mode">
+          <option>PREFLOP</option>
+        </select>
+      </label>
+
+      <label>Scenario
+        <select id="scenario">
+          <option>VS_OPEN</option>
+          <option selected>RFI</option>
+        </select>
+      </label>
+
+      <label>Hero
+        <select id="hero">
+          <option selected>BB</option>
+          <option>SB</option>
+          <option>BTN</option>
+        </select>
+      </label>
+
+      <label>Facing
+        <select id="facing">
+          <option>UTG</option>
+          <option>HJ</option>
+          <option selected>BTN</option>
+          <option>CO</option>
+        </select>
+      </label>
+
+      <label>Bucket
+        <select id="bucket">
+          <option>SHORT</option>
+          <option selected>STANDARD</option>
+          <option>DEEP</option>
+        </select>
+      </label>
+    </div>
+
+    <p><b>gridKey:</b> <code id="gridKey"></code></p>
+    <div id="grid"></div>
+
+    <!-- Embedded SSOT data (single-file mode) -->
+    <script type="application/json" id="legend-json">{
+  "_copyright": "\u00a9 2026 Alexander Pisko. All rights reserved.",
+  "version": 1,
+  "actions": [
+    {"id": "FOLD", "label": "Fold"},
+    {"id": "CALL", "label": "Call"},
+    {"id": "3BET", "label": "3-bet"},
+    {"id": "4BET", "label": "4-bet"},
+    {"id": "JAM", "label": "Jam"},
+    {"id": "RAISE", "label": "Raise"},
+    {"id": "MIX", "label": "Mix"}
+  ]
+}</script>
+
+    <script type="application/json" id="scenarios-json">{
+  "_copyright": "\u00a9 2026 Alexander Pisko. All rights reserved.",
+  "version": 2,
+  "notes": "Restored baseline with BB RFI placeholder record to repair routing blackout.",
+  "records": [
+    {"id": "PREFLOP:RFI:BB:BTN:STANDARD", "cells": {}}
+  ]
+}</script>
+
+    <script>
+      // © 2026 Alexander Pisko. All rights reserved.
+      // Single-file build: DATA → CORE → ADAPTERS → UI → APP (all inline)
+
+      // ------------------------------
+      // DATA (embedded)
+      // ------------------------------
+      function readEmbeddedJSON(id) {
+        const el = document.getElementById(id);
+        if (!el) return null;
+        try { return JSON.parse(el.textContent); } catch { return null; }
+      }
+      const LEGEND = readEmbeddedJSON("legend-json") || { version: 0, actions: [] };
+      const SCENARIOS = readEmbeddedJSON("scenarios-json") || { version: 0, records: [] };
+
+      // ------------------------------
+      // CORE
+      // ------------------------------
+      const RANKS = ["A","K","Q","J","T","9","8","7","6","5","4","3","2"];
+
+      function isValidCellKey(key) {
+        if (typeof key !== "string") return false;
+        const k = key.trim();
+        return /^([AKQJT98765432]{2})$/.test(k) || /^([AKQJT98765432]{2}s)$/.test(k) || /^([AKQJT98765432]{2}o)$/.test(k);
+      }
+
+      function cellKeyAt(rowRank, colRank) {
+        if (rowRank === colRank) return rowRank + colRank;
+        const rowIdx = RANKS.indexOf(rowRank);
+        const colIdx = RANKS.indexOf(colRank);
+        if (rowIdx < 0 || colIdx < 0) return null;
+        const hi = rowIdx < colIdx ? rowRank : colRank;
+        const lo = rowIdx < colIdx ? colRank : rowRank;
+        return rowIdx < colIdx ? (hi + lo + "s") : (hi + lo + "o");
+      }
+
+      function gridKey(state) {
+        const mode = String(state?.mode ?? "").trim().toUpperCase();
+        const scenario = String(state?.scenario ?? "").trim().toUpperCase();
+        const hero = String(state?.hero ?? "").trim().toUpperCase();
+        const facing = String(state?.facing ?? "").trim().toUpperCase();
+        const bucket = String(state?.bucket ?? "").trim().toUpperCase();
+        return [mode, scenario, hero, facing, bucket].join(":");
+      }
+
+      // ------------------------------
+      // ADAPTERS
+      // ------------------------------
+      function normalizeState(state) {
+        const s = { ...state };
+        s.mode = String(s.mode ?? "").trim().toUpperCase() || "PREFLOP";
+        s.scenario = String(s.scenario ?? "").trim().toUpperCase() || "RFI";
+        s.hero = String(s.hero ?? "").trim().toUpperCase() || "BB";
+        s.facing = String(s.facing ?? "").trim().toUpperCase() || "BTN";
+        s.bucket = String(s.bucket ?? "").trim().toUpperCase() || "STANDARD";
+        return s;
+      }
+
+      const SCENARIO_INDEX = (() => {
+        const m = new Map();
+        const recs = Array.isArray(SCENARIOS.records) ? SCENARIOS.records : [];
+        for (const r of recs) {
+          const id = String(r?.id ?? "").trim().toUpperCase();
+          if (!id) continue;
+          m.set(id, r);
+        }
+        return m;
+      })();
+
+      function resolveActiveGrid(key) {
+        const k = String(key ?? "").trim().toUpperCase();
+        return SCENARIO_INDEX.get(k) || null;
+      }
+
+      function emptyCellsMap() {
+        const out = {};
+        for (const row of RANKS) {
+          for (const col of RANKS) {
+            const key = cellKeyAt(row, col);
+            out[key] = { action: "" };
+          }
+        }
+        return out;
+      }
+
+      function normalizeCellValue(value) {
+        if (typeof value === "string") return { action: value.trim().toUpperCase() };
+        if (value && typeof value === "object") return { ...value, action: String(value.action ?? "").trim().toUpperCase() };
+        return { action: "" };
+      }
+
+      function getActiveCells(activeGrid) {
+        const result = emptyCellsMap();
+        if (!activeGrid) return result;
+
+        const cells = activeGrid.cells;
+        if (!cells || typeof cells !== "object") return result;
+
+        for (const [key, value] of Object.entries(cells)) {
+          if (!isValidCellKey(key)) continue;
+          result[key] = normalizeCellValue(value);
+        }
+
+        return result;
+      }
+
+      const STORAGE_KEY = "pokerengine.storage.v1";
+
+      function loadLastState() {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (!raw) return null;
+          const parsed = JSON.parse(raw);
+          return parsed && typeof parsed === "object" ? (parsed.lastState ?? null) : null;
+        } catch {
+          return null;
+        }
+      }
+
+      function saveLastState(lastState) {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify({ lastState }));
+        } catch {
+          // ignore
+        }
+      }
+
+      // ------------------------------
+      // UI
+      // ------------------------------
+      function renderGrid(cells, mountEl) {
+        if (!mountEl) return;
+        mountEl.innerHTML = "";
+
+        const table = document.createElement("table");
+
+        const tr0 = document.createElement("tr");
+        tr0.appendChild(document.createElement("th"));
+        for (const r of RANKS) {
+          const th = document.createElement("th");
+          th.textContent = r;
+          tr0.appendChild(th);
+        }
+        table.appendChild(tr0);
+
+        for (const row of RANKS) {
+          const tr = document.createElement("tr");
+          const th = document.createElement("th");
+          th.textContent = row;
+          tr.appendChild(th);
+
+          for (const col of RANKS) {
+            const key = cellKeyAt(row, col);
+            const td = document.createElement("td");
+            td.title = key || "";
+            const action = cells?.[key]?.action ?? "";
+            td.textContent = action ? action[0] : "";
+            tr.appendChild(td);
+          }
+
+          table.appendChild(tr);
+        }
+
+        mountEl.appendChild(table);
+      }
+
+      function bindControls(setState) {
+        const ids = ["mode","scenario","hero","facing","bucket"];
+        for (const id of ids) {
+          const el = document.getElementById(id);
+          if (!el) continue;
+          el.addEventListener("change", () => setState({ [id]: el.value }));
+        }
+      }
+
+      // ------------------------------
+      // APP
+      // ------------------------------
+      let state = {
+        mode: "PREFLOP",
+        scenario: "RFI",
+        hero: "BB",
+        facing: "BTN",
+        bucket: "STANDARD",
+      };
+
+      function setState(patch) {
+        state = { ...state, ...patch };
+        render();
+      }
+
+      function render() {
+        state = normalizeState(state);
+        const key = gridKey(state);
+        const activeGrid = resolveActiveGrid(key);
+        const cells = getActiveCells(activeGrid);
+
+        const keyEl = document.getElementById("gridKey");
+        if (keyEl) keyEl.textContent = key;
+
+        renderGrid(cells, document.getElementById("grid"));
+        saveLastState({ ...state });
+      }
+
+      function init() {
+        bindControls(setState);
+
+        const last = loadLastState();
+        if (last) state = { ...state, ...last };
+
+        // Sync selects to current state
+        for (const k of ["mode","scenario","hero","facing","bucket"]) {
+          const el = document.getElementById(k);
+          if (el && state[k]) el.value = state[k];
+        }
+
+        render();
+      }
+
+      init();
+    </script>
+  </body>
+</html>

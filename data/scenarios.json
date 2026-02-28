@@ -1,0 +1,11 @@
+{
+  "_copyright": "\u00a9 2026 Alexander Pisko. All rights reserved.",
+  "version": 2,
+  "notes": "Restored baseline with BB RFI placeholder record to repair routing blackout.",
+  "records": [
+    {
+      "id": "PREFLOP:RFI:BB:BTN:STANDARD",
+      "cells": {}
+    }
+  ]
+}

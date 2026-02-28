@@ -1,0 +1,63 @@
+<!-- © 2026 Alexander Pisko. All rights reserved.
+index.html — dev runner for ACP1 foundation.
+-->
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Poker Engine — ACP1 Foundation</title>
+  </head>
+  <body>
+    <h1>Poker Engine — ACP1 Foundation</h1>
+    <p><b>SSOT:</b> docs/POKERENGINE_MASTERSSOTV015.docx</p>
+
+    <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
+      <label>Mode
+        <select id="mode">
+          <option>PREFLOP</option>
+        </select>
+      </label>
+
+      <label>Scenario
+        <select id="scenario">
+          <option>VS_OPEN</option>
+          <option>RFI</option>
+        </select>
+      </label>
+
+      <label>Hero
+        <select id="hero">
+          <option>BB</option>
+          <option>SB</option>
+          <option>BTN</option>
+        </select>
+      </label>
+
+      <label>Facing
+        <select id="facing">
+          <option>UTG</option>
+          <option>HJ</option>
+          <option>CO</option>
+          <option>BTN</option>
+        </select>
+      </label>
+
+      <label>Bucket
+        <select id="bucket">
+          <option>SHORT</option>
+          <option selected>STANDARD</option>
+          <option>DEEP</option>
+        </select>
+      </label>
+    </div>
+
+    <p><b>gridKey:</b> <span id="gridKey"></span></p>
+    <div id="grid"></div>
+
+    <script type="module">
+      import { init } from "./src/app/main.js";
+      init();
+    </script>
+  </body>
+</html>
